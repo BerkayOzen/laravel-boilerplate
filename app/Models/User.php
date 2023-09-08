@@ -43,4 +43,23 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
     ];
+
+    public function info()
+    {
+        return $this->hasOne(UserInfo::class);
+    }
+
+    public function currentPermissions()
+    {
+        $roles = $this->roles();
+        $permissions = collect();
+
+        $roles->each(function ($role) use (&$permissions) {
+            $permissions = $permissions->merge($role->permissions);
+        });
+
+        $directPermissions = $this->getDirectPermissions();
+
+        return $permissions->merge($directPermissions)->unique();
+    }
 }

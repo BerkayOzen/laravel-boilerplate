@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Resources\UserResource;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -18,6 +20,7 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required',
+            'username' => 'required|unique:users',
             'email' => 'required|email|unique:users',
             'password' => 'required|min:4|confirmed',
         ]);
@@ -31,6 +34,7 @@ class AuthController extends Controller
 
         $user = User::query()->create([
             'name' => $request->name,
+            'username' => $request->username,
             'email' => $request->email,
             'password' => Hash::make($request->password),
         ]);
@@ -39,7 +43,7 @@ class AuthController extends Controller
 
         $response = [
             'status' => 'success',
-            'user' => $user,
+            'user' => UserResource::make($user),
             'token' => $token,
             'token_type' => 'Bearer',
         ];
@@ -47,70 +51,30 @@ class AuthController extends Controller
         return response()->json($response, 200)->header('Authorization', $token);
     }
 
-    public function login(Request $request)
+    public function login(LoginRequest $request)
     {
-        $validator = Validator::make($request->all(), [
-            'email' => 'required|string|email',
-            'password' => 'required|string',
-        ]);
+        $request->authenticate();
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status_code' => 202,
-                'message' => $validator->errors(),
-            ], 202);
-        }
+        $user = $request->user();
 
-        $credentials = $validator->validated();
-        if (Auth::attempt($credentials)){
-            $client = DB::table('oauth_clients')
-                ->where('password_client', true)
-                ->first();
+        $accessToken = $user->createToken('Auth Token')->accessToken;
 
-            $body = [
-                'grant_type' => 'password',
-                'client_id' => $client->id,
-                'client_secret' => $client->secret,
-                'username' => $credentials['email'],
-                'password' => $credentials['password'],
-                'scope' => '*',
-            ];
+        $message = [
+            'status' => 'success',
+            'user' => UserResource::make($user),
+            'access_token' => $accessToken,
+            'token_type' => 'Bearer',
+            'expires_at' => Carbon::parse(Carbon::now()->addDays(1))->toDateTimeString(),
+        ];
 
-            $request->request->add($body);
-
-            $proxy = Request::create('oauth/token', 'POST');
-
-            $response = json_decode(Route::dispatch($proxy)->getContent(), true);
-
-            $user = Auth::user();
-
-            $message = [
-                'status' => 'success',
-                'user' => $user,
-                'access_token' => $response['access_token'],
-                'refresh_token' => $response['refresh_token'],
-                'token_type' => 'Bearer',
-                'expires_at' => Carbon::parse(Carbon::now()->addDays(1))->toDateTimeString(),
-            ];
-            return response()->json($message, 200)
-                ->withHeaders([
-                    'Access-Control-Expose-Headers' => 'Authorization, Refresh',
-                    'Authorization' => 'Bearer ' . $response['access_token'],
-                    'Refresh' => $response['refresh_token'],
-                ]);
-        } else {
-            $response = [
-                'status' => 'error',
-                'message' => 'Unauthorised',
-            ];
-            return response()->json($response, 401);
-        }
+        return response()->json($message);
     }
 
     public function logout(Request $request)
     {
         $token = $request->user()->token();
         $token->revoke();
+        $token->delete();
         $response = [
             'status' => 'success',
             'message' => 'You have been successfully logged out!'
@@ -140,9 +104,9 @@ class AuthController extends Controller
 
         $message = [
             'status' => 'success',
-            'user' => $user,
-            'access_token' => $response['access_token'],
-            'refresh_token' => $response['refresh_token'],
+            'user' => UserResource::make($user),
+            'accessToken' => $response['access_token'],
+            'refresh' => $response['refresh_token'],
             'token_type' => 'Bearer',
             'expires_at' => Carbon::parse(Carbon::now()->addDays(1))->toDateTimeString(),
         ];

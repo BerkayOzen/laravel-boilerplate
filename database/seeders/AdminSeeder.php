@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Models\Permission;
+use App\Models\Role;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -19,6 +21,11 @@ class AdminSeeder extends Seeder
             99999 => 'admin@admin.com',
         ];
 
+        $role = Role::query()->where('name', 'admin')->first();
+        $permissions = Permission::query()->get()->pluck('name');
+
+        $role->syncPermissions($permissions);
+
         foreach ($admins as $id => $admin) {
             $admin = User::query()->firstOrCreate([
                 'email' => $admin,
@@ -26,6 +33,8 @@ class AdminSeeder extends Seeder
                 'name' => 'Admin',
                 'password' => Hash::make('admin'),
             ]);
+
+            $admin->assignRole($role);
         }
     }
 }
